@@ -224,13 +224,7 @@ module Corpus
                 s(:guard, s(:or, s(:primitive, TrueClass), s(:primitive, FalseClass)))),
               s(:key_symbolize, :exclude,             s(:map, s(:guard, s(:primitive, String))))
             ),
-            s(:load_attribute_hash,
-              # NOTE: The domain param has no DSL currently!
-              Morpher::Evaluator::Transformer::Domain::Param.new(
-                Project,
-                [:repo_uri, :name, :exclude, :mutation_coverage, :mutation_generation]
-              )
-            )
+            s(:anima_load, Project)
           )
         )
       )
