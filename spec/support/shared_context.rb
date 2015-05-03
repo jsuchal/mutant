@@ -45,12 +45,14 @@ module SharedContext
     let(:subject_a) do
       double(
         'subject a',
-        node:           s(:true),
-        source:         'true',
+        node:           subject_a_node,
+        source:         Unparser.unparse(subject_a_node),
         tests:          [test_a],
         identification: 'subject-a'
       )
     end
+
+    let(:subject_a_node) { s(:true) }
 
     before do
       allow(subject_a).to receive(:mutations).and_return([mutation_a, mutation_b])

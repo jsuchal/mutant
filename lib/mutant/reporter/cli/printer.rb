@@ -5,6 +5,8 @@ module Mutant
       class Printer
         include AbstractType, Delegator, Adamantium::Flat, Concord.new(:output, :object)
 
+        private_class_method :new
+
         delegate(:success?)
 
         NL = "\n".freeze
@@ -20,6 +22,7 @@ module Mutant
         #
         def self.run(output, object)
           new(output, object).run
+          self
         end
 
         # Run printer
@@ -134,84 +137,6 @@ module Mutant
         #
         alias_method :color?, :tty?
 
-        # Printer for runner status
-        class Status < self
-
-          delegate(:active_jobs, :payload)
-
-          # Print progress for collector
-          #
-          # @return [self]
-          #
-          # @api private
-          #
-          def run
-            visit(EnvProgress, payload)
-            job_status
-            info('Active subjects: %d', active_subject_results.length)
-            visit_collection(SubjectProgress, active_subject_results)
-            self
-          end
-
-        private
-
-          # Print worker status
-          #
-          # @return [undefined]
-          #
-          # @api private
-          #
-          def job_status
-            return if active_jobs.empty?
-            info('Active Jobs:')
-            active_jobs.sort_by(&:index).each do |job|
-              info('%d: %s', job.index, job.payload.identification)
-            end
-          end
-
-          # Return active subject results
-          #
-          # @return [Array<Result::Subject>]
-          #
-          # @api private
-          #
-          def active_subject_results
-            active_mutation_jobs = active_jobs.select { |job| job.payload.kind_of?(Mutation) }
-            active_subjects = active_mutation_jobs.map(&:payload).flat_map(&:subject).to_set
-
-            payload.subject_results.select do |subject_result|
-              active_subjects.include?(subject_result.subject)
-            end
-          end
-
-        end # Status
-
-        # Progress printer for configuration
-        class Config < self
-
-          # Report configuration
-          #
-          # @param [Mutant::Config] config
-          #
-          # @return [self]
-          #
-          # @api private
-          #
-          # rubocop:disable AbcSize
-          #
-          def run
-            info 'Mutant configuration:'
-            info 'Matcher:         %s',      object.matcher.inspect
-            info 'Integration:     %s',      object.integration.name
-            info 'Expect Coverage: %0.2f%%', (object.expected_coverage * 100)
-            info 'Jobs:            %d',      object.jobs
-            info 'Includes:        %s',      object.includes.inspect
-            info 'Requires:        %s',      object.requires.inspect
-            self
-          end
-
-        end # Config
-
         # Env progress printer
         class EnvProgress < self
 
@@ -229,7 +154,7 @@ module Mutant
 
           # Run printer
           #
-          # @return [self]
+          # @return [undefined]
           #
           # @api private
           #
@@ -246,7 +171,6 @@ module Mutant
             info 'Overhead:        %0.2f%%',   overhead_percent
             status 'Coverage:        %0.2f%%', coverage_percent
             status 'Expected:        %0.2f%%', (env.config.expected_coverage * 100)
-            self
           end
 
         private
@@ -280,14 +204,13 @@ module Mutant
 
           # Run printer
           #
-          # @return [self]
+          # @return [undefined]
           #
           # @api private
           #
           def run
             visit_collection(SubjectResult, failed_subject_results)
             visit(EnvProgress, object)
-            self
           end
 
         end # EnvResult
@@ -299,7 +222,7 @@ module Mutant
 
           # Run report printer
           #
-          # @return [self]
+          # @return [undefined]
           #
           # @api private
           #
@@ -309,7 +232,6 @@ module Mutant
               puts("- #{test.identification}")
             end
             visit_collection(MutationResult, object.alive_mutation_results)
-            self
           end
 
         end # Subject
@@ -322,7 +244,7 @@ module Mutant
 
           # Run printer
           #
-          # @return [self]
+          # @return [undefined]
           #
           # @api private
           #
@@ -363,7 +285,7 @@ module Mutant
 
           # Run printer
           #
-          # @return [self]
+          # @return [undefined]
           #
           # @api private
           #
@@ -377,8 +299,6 @@ module Mutant
               runtime,
               overhead
             )
-
-            self
           end
 
         private
@@ -390,7 +310,7 @@ module Mutant
           # @api private
           #
           def object
-            super().payload
+            super.payload
           end
         end
 
@@ -413,7 +333,7 @@ module Mutant
 
           # Run printer
           #
-          # @return [self]
+          # @return [undefined]
           #
           # @api private
           #
@@ -423,7 +343,6 @@ module Mutant
             print_progress_bar_finish
             print_stats
             print_tests
-            self
           end
 
         private
@@ -480,129 +399,29 @@ module Mutant
 
         end # Subject
 
-        # Reporter for mutation results
-        class MutationResult < self
-
-          delegate :mutation, :test_result
-
-          DIFF_ERROR_MESSAGE =
-            'BUG: Mutation NOT resulted in exactly one diff hunk. Please report a reproduction!'.freeze
-
-          MAP = {
-            Mutant::Mutation::Evil    => :evil_details,
-            Mutant::Mutation::Neutral => :neutral_details,
-            Mutant::Mutation::Noop    => :noop_details
-          }.freeze
-
-          NEUTRAL_MESSAGE =
-            "--- Neutral failure ---\n" \
-            "Original code was inserted unmutated. And the test did NOT PASS.\n" \
-            "Your tests do not pass initially or you found a bug in mutant / unparser.\n" \
-            "Subject AST:\n" \
-            "%s\n" \
-            "Unparsed Source:\n" \
-            "%s\n" \
-            "Test Result:\n".freeze
-
-          NOOP_MESSAGE    =
-            "---- Noop failure -----\n" \
-            "No code was inserted. And the test did NOT PASS.\n" \
-            "This is typically a problem of your specs not passing unmutated.\n" \
-            "Test Result:\n".freeze
-
-          FOOTER = '-----------------------'.freeze
-
-          # Run report printer
-          #
-          # @return [self]
-          #
-          # @api private
-          #
-          def run
-            puts(mutation.identification)
-            print_details
-            puts(FOOTER)
-            self
-          end
-
-        private
-
-          # Return details
-          #
-          # @return [undefined]
-          #
-          # @api private
-          #
-          def print_details
-            send(MAP.fetch(mutation.class))
-          end
-
-          # Return evil details
-          #
-          # @return [String]
-          #
-          # @api private
-          #
-          def evil_details
-            original, current = mutation.original_source, mutation.source
-            diff = Mutant::Diff.build(original, current)
-            diff = color? ? diff.colorized_diff : diff.diff
-            puts(diff || ['Original source:', original, 'Mutated Source:', current, DIFF_ERROR_MESSAGE])
-          end
-
-          # Noop details
-          #
-          # @return [String]
-          #
-          # @api private
-          #
-          def noop_details
-            info(NOOP_MESSAGE)
-            visit_test_result
-          end
-
-          # Neutral details
-          #
-          # @return [String]
-          #
-          # @api private
-          #
-          def neutral_details
-            info(NEUTRAL_MESSAGE, mutation.subject.node.inspect, mutation.source)
-            visit_test_result
-          end
-
-          # Visit failed test results
-          #
-          # @return [undefined]
-          #
-          # @api private
-          #
-          def visit_test_result
-            visit(TestResult, test_result)
-          end
-
-        end # MutationResult
-
         # Test result reporter
         class TestResult < self
 
           delegate :tests, :runtime
 
+          STATUS_FORMAT = '- %d @ runtime: %s'.freeze
+
           # Run test result reporter
           #
-          # @return [self]
+          # @return [undefined]
           #
           # @api private
           #
           def run
-            status('- %d @ runtime: %s', tests.length, runtime)
+            status(STATUS_FORMAT, tests.length, runtime)
             tests.each do |test|
               puts("  - #{test.identification}")
             end
             puts('Test Output:')
             puts(object.output)
           end
+
+        private
 
           # Test if test result is successful
           #
